@@ -177,12 +177,33 @@ async function main() {
   await b2.waitForSelector("#fin-capa.on");
   ok(/ausencia/i.test(await txt(b2, "#fin-titulo")), "victoria por ausencia");
 
-  // salir: vuelve la partida local de antes
+  // salir de la partida: vuelve a la lista de partidas abiertas
   await b2.click("#on-salir");
-  ok(!(await b2.isVisible("#on-crear")), "panel online oculto");
-  ok(await b2.evaluate(() => window.__cheaster.movimientos.length) >= 0, "volvió al modo local");
-  if (b2 === p1) ok(await mov(p1) === 1, "la partida local de J1 se conserva (1 jugada)");
-  await b2.screenshot({ path: "/tmp/claude-0/-home-claude/1f05e95b-8de4-5706-ac09-a38f1879c437/scratchpad/on_local.png" });
+  ok(await b2.isVisible("#on-crear"), "Salir de la partida devuelve al inicio online");
+  ok(await b2.evaluate(() => window.__cheaster.sesion === null), "sin sesión");
+  // lobby: J1 (b2) crea una pública; el otro navegador nuevo la ve en la lista y entra con un clic
+  await b2.click("#on-crear"); await b2.waitForSelector("#on-cod:not(:empty)");
+  await b2.waitForFunction(() => /Tu partida está en la lista|Esperando a tu rival/.test(document.getElementById("on-rival").textContent));
+  ok(/cualquiera puede unirse/.test(await txt(b2, "#on-rival")), "sala pública avisa de que está en la lista");
+  const J3 = await nueva({ viewport: { width: 1000, height: 800 } }); const p3 = J3.pg;
+  await p3.goto(URL); await p3.click("#m-online");
+  await p3.waitForFunction(() => document.querySelectorAll("#on-lista button").length >= 1, null, { timeout: 8000 });
+  ok(/Unirme · juegas con/.test(await txt(p3, "#on-lista")), "la partida aparece en la lista");
+  await p3.click("#on-lista button");
+  await p3.waitForFunction(() => /Rival conectado/.test(document.getElementById("on-rival").textContent));
+  await b2.waitForFunction(() => /Rival conectado/.test(document.getElementById("on-rival").textContent));
+  ok(true, "entrar desde la lista funciona");
+  // una privada no sale en la lista
+  const J4 = await nueva(); const p4 = J4.pg;
+  await p4.goto(URL); await p4.click("#m-online"); await p4.uncheck("#on-publica"); await p4.click("#on-crear");
+  await p4.waitForSelector("#on-cod:not(:empty)");
+  const J5 = await nueva(); const p5 = J5.pg;
+  await p5.goto(URL); await p5.click("#m-online");
+  await p5.waitForFunction(() => /No hay partidas abiertas/.test(document.getElementById("on-lista").textContent), null, { timeout: 8000 });
+  ok(true, "una partida privada no aparece (y la llena tampoco)");
+  // volver al modo local desde online
+  await p5.click("#m-dos");
+  ok(!(await p5.isVisible("#on-crear")), "panel online oculto al pasar a 2 jugadores");
 
   ok(errores.length === 0, "sin errores de consola: " + errores.join(" | "));
   console.log(`${pruebas} comprobaciones, ${fallos} fallos`);

@@ -94,6 +94,10 @@
   #on-inicio { display: flex; flex-direction: column; gap: 8px; }
   #online.en-sala #on-sala { display: flex; }
   #online.en-sala #on-inicio { display: none; }
+  #on-lista { display: flex; flex-direction: column; gap: 6px; }
+  #on-lista .vacio { color: var(--suave); font-size: 14px; }
+  #on-lista button { text-align: left; background: var(--azul); min-height: 40px; }
+  #on-lista button small { opacity: .8; }
   #on-cod { font-size: 24px; letter-spacing: .15em; font-weight: bold; }
   #on-rival { font-size: 15px; color: var(--suave); }
   #on-rival.ok { color: #9be39b; } #on-rival.mal { color: #ffb4a8; }
@@ -163,7 +167,10 @@
           <button class="sec" data-c="negras">Negras</button>
           <button class="sec on" data-c="azar">Al azar</button>
         </div>
-        <button id="on-crear">Crear partida e invitar a un amigo</button>
+        <label id="on-publica-et" style="display:flex;gap:8px;align-items:center;font-size:14px;color:var(--suave)"><input type="checkbox" id="on-publica" checked style="width:auto;min-height:0"> Partida pública: aparece en la lista y cualquiera puede unirse</label>
+        <button id="on-crear">Crear partida</button>
+        <div class="sep">Partidas abiertas (se actualiza sola):</div>
+        <div id="on-lista"><div class="vacio">Buscando…</div></div>
         <div class="sep">¿Te han invitado? Escribe el código:</div>
         <div class="union" style="margin-top:0">
           <input id="on-codigo" maxlength="8" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Código de la partida">
@@ -179,7 +186,7 @@
           <button id="on-tablas" class="sec">½ Ofrecer tablas</button>
           <button id="on-abandonar" class="sec">🏳 Abandonar</button>
           <button id="on-reclamar" class="sec" style="display:none">Reclamar victoria</button>
-          <button id="on-salir" class="sec">Salir</button>
+          <button id="on-salir" class="sec">Salir de la partida</button>
         </div>
       </div>
       <div id="on-msg" role="status" aria-live="polite"></div>
@@ -623,7 +630,7 @@ function actualizarEstadoSolo() { if (S) actualizarEstado(estadoActual()); }
 
 function perderSesion() {
   olvidarSesion(); sesion = null; esperando = false;
-  if (enLinea) { reconstruir([]); }
+  if (enLinea) { reconstruir([]); refrescarLista(); }
 }
 function entrarOnline() {
   if (enLinea) return;
@@ -631,6 +638,7 @@ function entrarOnline() {
   enLinea = true; sesion = null; esperando = false;
   ajustes.girado = false;
   reconstruir([]);
+  refrescarLista();
 }
 function salirOnline() {
   if (!enLinea) return;
@@ -641,13 +649,31 @@ function salirOnline() {
   reconstruir(lista);
   if (ajustes.vsIA && !resultado) turnoIA();
 }
+// Lista de partidas abiertas (se pide al servidor cada pocos segundos mientras no estés en una partida)
+function tiempoHace(seg) { return seg < 60 ? "hace un momento" : "hace " + Math.round(seg / 60) + " min"; }
+function refrescarLista() {
+  if (!enLinea || sesion) return;
+  conectar().then(s => s.emit("listar", {}, r => {
+    if (!r || !r.ok || !enLinea || sesion) return;
+    const cont = elOn("on-lista"); cont.textContent = "";
+    if (!r.partidas.length) { const d = document.createElement("div"); d.className = "vacio"; d.textContent = "No hay partidas abiertas ahora. Crea una y espera a un rival."; cont.appendChild(d); return; }
+    for (const g of r.partidas) {
+      const b = document.createElement("button");
+      b.append("Unirme · juegas con " + g.libre + " ");
+      const sm = document.createElement("small"); sm.textContent = "(" + tiempoHace(g.hace) + ")"; b.appendChild(sm);
+      b.addEventListener("click", () => unirseAPartida(g.codigo));
+      cont.appendChild(b);
+    }
+  })).catch(() => { const c = elOn("on-lista"); c.textContent = ""; const d = document.createElement("div"); d.className = "vacio"; d.textContent = "Sin conexión con el servidor de partidas."; c.appendChild(d); });
+}
+setInterval(() => { if (!document.hidden) refrescarLista(); }, 4000);
 function errorConexion() { mensajeOnline("No se puede conectar con el servidor de partidas. Inténtalo de nuevo en un momento.", 0); }
 
 function crearPartida() {
   if (!enLinea) entrarOnline();
   const col = document.querySelector("#on-colores button.on");
   mensajeOnline("Creando la partida…", 0);
-  conectar().then(s => s.emit("crear", { color: col ? col.dataset.c : "azar" }, r => {
+  conectar().then(s => s.emit("crear", { color: col ? col.dataset.c : "azar", publica: elOn("on-publica").checked }, r => {
     if (!r || !r.ok) { mensajeOnline(r ? r.error : "Sin respuesta del servidor", 0); return; }
     mensajeOnline("");
     sesion = { token: r.token, revancha: {} };
@@ -677,15 +703,17 @@ function unirseAPartida(codigo, desdeEnlace) {
 // Aplica el estado completo que manda el servidor (al entrar, al reconectar, cuando cambia algo que no es una jugada)
 function aplicarVista(v) {
   const antes = sesion || {};
+  const llegoRival = !!antes.codigo && !antes.hayRival && v.hayRival;
   const cambioPartida = antes.codigo !== v.codigo || antes.partida !== v.partida || antes.color !== v.color;
   Object.assign(sesion, {
     codigo: v.codigo, color: v.color, hayRival: v.hayRival, rivalConectado: v.rivalConectado,
     ausenteDesde: (!v.hayRival || v.rivalConectado) ? 0 : Date.now() - (v.rivalAusenteMs || 0),
-    oferta: v.oferta, fin: v.fin, revancha: v.revancha, partida: v.partida, ausenciaMs: v.ausenciaMs || 60000
+    oferta: v.oferta, fin: v.fin, revancha: v.revancha, partida: v.partida, ausenciaMs: v.ausenciaMs || 60000, publica: !!v.publica
   });
   if (cambioPartida) ajustes.girado = v.color === BLACK;
   esperando = false;
   guardarSesion();
+  if (llegoRival) { sonido("jaque"); if (document.hidden) document.title = "● Ya hay rival · Cheaster"; }
   const ult = movimientos.length ? movimientos[movimientos.length - 1] : null, vu = v.moves.length ? v.moves[v.moves.length - 1] : null;
   const igual = movimientos.length === v.moves.length && (!ult || (ult.from === vu.from && ult.to === vu.to));
   if (igual && !cambioPartida) { resultado = estadoActual().fin ? estadoActual() : null; dibujar(); }
@@ -735,7 +763,7 @@ function actualizarOnline() {
   let txt, cls = "";
   const ausente = sesion.ausenteDesde ? Date.now() - sesion.ausenteDesde : 0;
   if (!conectadoServer) { txt = "Sin conexión con el servidor. Reconectando…"; cls = "mal"; }
-  else if (!sesion.hayRival) { txt = "Esperando a tu rival. Envíale el enlace o el código."; }
+  else if (!sesion.hayRival) { txt = sesion.publica ? "Tu partida está en la lista: cualquiera puede unirse. También puedes enviar el enlace." : "Esperando a tu rival. Envíale el enlace o el código."; }
   else if (!sesion.rivalConectado) { txt = "Tu rival se ha desconectado." + (ausente >= sesion.ausenciaMs && !resultado ? " Ya puedes reclamar la victoria." : " Espera un momento a que vuelva."); cls = "mal"; }
   else { txt = `Rival conectado. Juegas con las ${bando(sesion.color)}.`; cls = "ok"; }
   r.textContent = txt; r.className = cls;
@@ -778,8 +806,10 @@ elOn("on-abandonar").addEventListener("click", () => {
 });
 elOn("on-reclamar").addEventListener("click", () => { if (sock) sock.emit("reclamar", {}, r => { if (r && !r.ok) mensajeOnline(r.error); }); });
 elOn("on-salir").addEventListener("click", () => {
-  if (sesion && !resultado && sesion.hayRival && movimientos.length && !confirm("Si sales, tu rival se quedará esperándote y no podrás volver a esta partida desde aquí. ¿Salir?")) return;
-  salirOnline();
+  if (sesion && !resultado && sesion.hayRival && movimientos.length && !confirm("Si sales, tu rival se quedará esperándote y no podrás volver a esta partida desde aquí. ¿Salir de la partida?")) return;
+  if (sock) sock.emit("salir", {});
+  olvidarSesion(); sesion = null; esperando = false; mensajeOnline("");
+  reconstruir([]); refrescarLista();       // vuelves a la lista de partidas abiertas
 });
 
 // ---------- Altura para incrustarlo en otra web (iframe) ----------

@@ -75,12 +75,13 @@ function codigoNuevo() {
   }
 }
 const nuevoAsiento = () => ({ token: null, sid: null, desde: 0 });
+const MAX_LISTA = 20, VIDA_LISTA_MS = 3600 * 1000; // en la lista de partidas abiertas: máximo 20, y solo las de la última hora
 function empezar(sala) {
   sala.S = E.nuevoEstado(); sala.rep = {}; sala.rep[E.clave(sala.S)] = 1;
   sala.moves = []; sala.sans = []; sala.fin = null; sala.oferta = 0; sala.revancha = { "1": false, "-1": false };
 }
 function crearSala(colorPedido) {
-  const sala = { codigo: codigoNuevo(), ult: Date.now(), partida: 1, asientos: { "1": nuevoAsiento(), "-1": nuevoAsiento() } };
+  const sala = { codigo: codigoNuevo(), ult: Date.now(), creada: Date.now(), publica: false, partida: 1, asientos: { "1": nuevoAsiento(), "-1": nuevoAsiento() } };
   empezar(sala);
   salas.set(sala.codigo, sala);
   return sala;
@@ -115,7 +116,7 @@ function vista(sala, color) {
     codigo: sala.codigo, color, moves: sala.moves, sans: sala.sans, fin: sala.fin,
     hayRival: !!rival.token, rivalConectado: conectado(rival),
     rivalAusenteMs: rival.token && !conectado(rival) && rival.desde ? Date.now() - rival.desde : 0,
-    oferta: sala.oferta, partida: sala.partida, ausenciaMs: AUSENCIA_MS,
+    oferta: sala.oferta, partida: sala.partida, ausenciaMs: AUSENCIA_MS, publica: !!sala.publica,
     revancha: { yo: sala.revancha[String(color)], rival: sala.revancha[String(-color)] }
   };
 }
@@ -127,6 +128,19 @@ function enviarEstado(sala) {
 }
 function tocar(sala) { sala.ult = Date.now(); marcarCambio(); }
 
+// Partidas públicas esperando rival: solo las que tienen al creador conectado y sin segundo jugador
+function listaAbiertas() {
+  const ahora = Date.now(), lista = [];
+  for (const s of salas.values()) {
+    if (!s.publica || completa(s) || s.moves.length || ahora - s.creada > VIDA_LISTA_MS) continue;
+    const c = s.asientos["1"].token ? 1 : -1;            // color del creador
+    if (!conectado(s.asientos[String(c)])) continue;
+    lista.push({ codigo: s.codigo, libre: c === 1 ? "negras" : "blancas", hace: Math.round((ahora - s.creada) / 1000) });
+  }
+  lista.sort((a, b) => a.hace - b.hace);
+  return lista.slice(0, MAX_LISTA);
+}
+
 // ---------- Guardado en disco ----------
 let sucio = false;
 function marcarCambio() { sucio = true; }
@@ -135,7 +149,7 @@ function guardarDisco() {
   try {
     fs.mkdirSync(DATOS, { recursive: true });
     const lista = [...salas.values()].map(s => ({
-      codigo: s.codigo, ult: s.ult, partida: s.partida, moves: s.moves, fin: s.fin, oferta: s.oferta, revancha: s.revancha,
+      codigo: s.codigo, ult: s.ult, creada: s.creada, publica: !!s.publica, partida: s.partida, moves: s.moves, fin: s.fin, oferta: s.oferta, revancha: s.revancha,
       tokens: { "1": s.asientos["1"].token, "-1": s.asientos["-1"].token }
     }));
     const tmp = path.join(DATOS, "salas.json.tmp");
@@ -148,7 +162,7 @@ function cargarDisco() {
     const lista = JSON.parse(fs.readFileSync(path.join(DATOS, "salas.json"), "utf8"));
     for (const d of lista) {
       if (!d || typeof d.codigo !== "string" || Date.now() - d.ult > VIDA_SALA_MS) continue;
-      const s = { codigo: d.codigo, ult: d.ult, partida: d.partida || 1, asientos: { "1": nuevoAsiento(), "-1": nuevoAsiento() } };
+      const s = { codigo: d.codigo, ult: d.ult, creada: d.creada || d.ult, publica: !!d.publica, partida: d.partida || 1, asientos: { "1": nuevoAsiento(), "-1": nuevoAsiento() } };
       reproducir(s, Array.isArray(d.moves) ? d.moves : []);
       s.fin = s.fin || d.fin || null;
       s.oferta = d.oferta || 0;
@@ -208,6 +222,7 @@ io.on("connection", socket => {
     const pedido = datos && datos.color;
     const color = pedido === "blancas" ? 1 : pedido === "negras" ? -1 : (crypto.randomInt(2) ? 1 : -1);
     const s = crearSala();
+    s.publica = !!(datos && datos.publica);
     const token = crypto.randomBytes(16).toString("hex");
     s.asientos[String(color)].token = token;
     sentar(s, color);
@@ -240,6 +255,11 @@ io.on("connection", socket => {
     tocar(s);
     ok(cb, { token, estado: vista(s, color) });
     enviarEstado(s); // avisa también al rival (conectado / recién llegado)
+  });
+
+  socket.on("listar", (d, cb) => {
+    if (limitado()) return error(cb, "Demasiadas peticiones");
+    ok(cb, { partidas: listaAbiertas() });
   });
 
   socket.on("sync", (datos, cb) => {

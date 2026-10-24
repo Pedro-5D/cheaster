@@ -105,6 +105,20 @@ async function main() {
   r = await A3.emit("sync", {}); ok(r.ok && r.estado.codigo === cod, "sync");
   await A3.emit("salir", {}); await dormir(80); ok(B3.ultimo("estado").rivalConectado === false, "salir marca desconectado");
   r = await A3.emit("sync", {}); ok(!r.ok, "sync sin sala");
+  // --- lista pública
+  const L1 = await conectar(PUERTO), L2 = await conectar(PUERTO), L3 = await conectar(PUERTO);
+  let lr = await L1.emit("crear", { color: "blancas", publica: true }); const codPub = lr.estado.codigo;
+  ok(lr.estado.publica === true, "sala marcada como pública");
+  await L2.emit("crear", { color: "negras", publica: false });
+  lr = await L3.emit("listar", {});
+  ok(lr.ok && lr.partidas.length === 1 && lr.partidas[0].codigo === codPub && lr.partidas[0].libre === "negras", "solo aparece la pública, con el color libre");
+  await L3.emit("unirse", { codigo: codPub });
+  lr = await L2.emit("listar", {}); ok(lr.partidas.length === 0, "la llena sale de la lista");
+  // si el creador se va antes de que entre nadie, desaparece
+  const L4 = await conectar(PUERTO); await L4.emit("crear", { color: "azar", publica: true });
+  lr = await L2.emit("listar", {}); ok(lr.partidas.length === 1, "la nueva aparece");
+  L4.cerrar(); await dormir(100);
+  lr = await L2.emit("listar", {}); ok(lr.partidas.length === 0, "sin creador conectado desaparece de la lista");
   // --- límite de creación
   let limitado = false;
   for (let i = 0; i < 40; i++) { const t = await A3.emit("crear", { color: "azar" }); if (!t.ok) { limitado = true; break; } }
