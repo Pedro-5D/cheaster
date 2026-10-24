@@ -572,13 +572,14 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") document.get
 
 
 // ---------- Modo online ----------
-function leerSesion() { try { return JSON.parse(localStorage.getItem(CLAVE_ON) || "null"); } catch (e) { return null; } }
+// La partida online se recuerda POR PESTAÑA (sessionStorage): al recargar vuelves a ella, pero otra pestaña es otro jugador
+function leerSesion() { try { return JSON.parse(sessionStorage.getItem(CLAVE_ON) || "null"); } catch (e) { return null; } }
 function guardarSesion() {
   try {
-    if (sesion && sesion.token) localStorage.setItem(CLAVE_ON, JSON.stringify({ codigo: sesion.codigo, token: sesion.token, t: Date.now(), fin: !!sesion.fin }));
+    if (sesion && sesion.token) sessionStorage.setItem(CLAVE_ON, JSON.stringify({ codigo: sesion.codigo, token: sesion.token, t: Date.now(), fin: !!sesion.fin }));
   } catch (e) {}
 }
-function olvidarSesion() { try { localStorage.removeItem(CLAVE_ON); } catch (e) {} }
+function olvidarSesion() { try { sessionStorage.removeItem(CLAVE_ON); } catch (e) {} }
 const elOn = id => document.getElementById(id);
 let msgTimer = null;
 function mensajeOnline(txt, ms) {
