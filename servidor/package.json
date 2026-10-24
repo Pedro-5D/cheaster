@@ -1,0 +1,11 @@
+{
+  "name": "cheaster-servidor",
+  "version": "3.0.0",
+  "description": "Cheaster: ajedrez 6x6 sin caballos. Servidor de partidas online.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "socket.io": "^4.7.5" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED",
+  "private": true
+}

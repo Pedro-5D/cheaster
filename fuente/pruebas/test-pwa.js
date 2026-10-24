@@ -1,0 +1,10 @@
+const {chromium}=require('playwright');
+(async()=>{const b=await chromium.launch();const c=await b.newContext();const p=await c.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));
+ await p.goto('http://localhost:18765/');await p.waitForTimeout(1500);
+ const reg=await p.evaluate(async()=>{const r=await navigator.serviceWorker.getRegistration();return !!(r&&(r.active||r.installing||r.waiting))});
+ await p.evaluate(()=>navigator.serviceWorker.ready);
+ const man=await p.evaluate(async()=>{const r=await fetch('manifest.webmanifest');const j=await r.json();return j.name});
+ await c.setOffline(true);await p.reload();await p.waitForTimeout(500);
+ const titulo=await p.title();const tablero=await p.locator('.cas').count();
+ console.log({serviceWorker:reg,manifest:man,sinConexionTitulo:titulo,casillasSinConexion:tablero,errores:errs});
+ await b.close();})();

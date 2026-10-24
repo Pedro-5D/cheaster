@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cheaster - Ajedrez sin caballos</title>
+<meta name="description" content="Cheaster: ajedrez de 6x6 sin caballos. Juega contra un amigo o contra la IA, en el navegador y sin instalar nada.">
+<meta name="theme-color" content="#2f2f2f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --sq: min(15vw, 84px);
+    --claro: #eeeed2; --oscuro: #769656; --marco: #634833;
+    --fondo: #2f2f2f; --panel: #404040; --texto: #f1f1f1; --suave: #b8b8b8;
+    --acento: #4CAF50; --azul: #3f51b5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--fondo); color: var(--texto); font-family: Arial, Helvetica, sans-serif; min-height: 100vh; padding: 12px 8px 24px; }
+  h1 { margin: 0; font-size: 28px; text-align: center; }
+  .sub { margin: 2px 0 10px; text-align: center; color: var(--suave); font-size: 15px; }
+  .app { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: flex-start; max-width: 980px; margin: 0 auto; }
+  .col-tablero { display: flex; flex-direction: column; align-items: center; gap: 8px; width: calc(var(--sq) * 6 + 20px); max-width: 100%; }
+  .col-lateral { flex: 1 1 280px; max-width: 460px; min-width: min(280px, 100%); display: flex; flex-direction: column; gap: 10px; }
+
+  #estado { width: 100%; text-align: center; background: #333; border-radius: 6px; padding: 9px 10px; font-size: 17px; min-height: 40px; }
+  #estado.jaque { background: #7a2b2b; }
+  #estado.fin { background: #2e5a8a; }
+
+  .marco { position: relative; border: 10px solid var(--marco); background: var(--marco); border-radius: 4px; touch-action: manipulation; }
+  .tablero { display: grid; grid-template-columns: repeat(6, var(--sq)); grid-template-rows: repeat(6, var(--sq)); user-select: none; -webkit-user-select: none; }
+  .cas { position: relative; width: var(--sq); height: var(--sq); display: flex; align-items: center; justify-content: center; cursor: pointer; outline: none; }
+  .cas.c { background: var(--claro); } .cas.o { background: var(--oscuro); }
+  .cas.ultima.c { background: #f4ee8a; } .cas.ultima.o { background: #b9ca43; }
+  .cas.sel.c, .cas.sel.o { background: #f7e04a; }
+  .cas.jaque { background: radial-gradient(circle, #ff5a5a 0%, #ff5a5a 38%, transparent 72%), var(--claro); }
+  .cas.o.jaque { background: radial-gradient(circle, #ff5a5a 0%, #ff5a5a 38%, transparent 72%), var(--oscuro); }
+  .cas:focus-visible { box-shadow: inset 0 0 0 3px #1565c0; }
+  .cas .pz { width: 88%; height: 88%; pointer-events: none; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+  .cas.nuevo .pz { animation: pop .22s ease-out; }
+  @keyframes pop { from { transform: scale(.7); } to { transform: scale(1); } }
+  .cas .punto { position: absolute; width: 28%; height: 28%; border-radius: 50%; background: rgba(0,0,0,.22); pointer-events: none; }
+  .cas .aro { position: absolute; inset: 4%; border-radius: 50%; border: 5px solid rgba(0,0,0,.28); pointer-events: none; }
+  .cas .coord { position: absolute; font-size: calc(var(--sq) * .17); font-weight: bold; pointer-events: none; opacity: .75; }
+  .cas.c .coord { color: var(--oscuro); } .cas.o .coord { color: var(--claro); }
+  .coord.fila { top: 2px; left: 3px; } .coord.col { bottom: 1px; right: 4px; }
+
+  #fin-capa { position: absolute; inset: 0; background: rgba(0,0,0,.62); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px; text-align: center; padding: 12px; z-index: 5; }
+  #fin-capa.on { display: flex; }
+  #fin-capa .titulo { font-size: 24px; font-weight: bold; }
+  #fin-capa .detalle { color: #ddd; font-size: 16px; }
+
+  button { background: var(--acento); border: none; color: #fff; padding: 10px 14px; border-radius: 6px; cursor: pointer; font-size: 15px; min-height: 42px; }
+  button:hover { filter: brightness(1.08); }
+  button:disabled { background: #666; cursor: not-allowed; filter: none; }
+  button.sec { background: #5a5a5a; }
+  button.on { background: #2E7D32; }
+  button.nivel { background: var(--azul); } button.nivel.on { background: #1a237e; }
+  .fila-botones { display: flex; flex-wrap: wrap; gap: 8px; }
+  .fila-botones > button { flex: 1 1 auto; }
+  .grupo { background: var(--panel); border-radius: 8px; padding: 10px; }
+  .grupo h3 { margin: 0 0 8px; font-size: 14px; color: var(--suave); font-weight: normal; text-transform: uppercase; letter-spacing: .05em; }
+  #ia-opciones { display: none; margin-top: 8px; flex-direction: column; gap: 8px; }
+  #ia-opciones.on { display: flex; }
+
+  #historial { max-height: 220px; overflow-y: auto; font-size: 15px; line-height: 1.7; }
+  #historial .par { display: grid; grid-template-columns: 2.4em 1fr 1fr; padding: 0 6px; }
+  #historial .par:nth-child(odd) { background: rgba(255,255,255,.04); }
+  #historial .n { color: var(--suave); } #historial .ult { background: #5b6d2d; border-radius: 3px; padding: 0 4px; }
+  #historial .vacio { color: var(--suave); }
+
+  .capas { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; align-items: center; justify-content: center; z-index: 50; padding: 12px; }
+  .capas.on { display: flex; }
+  .caja { background: #333; border-radius: 10px; padding: 18px; max-width: 520px; width: 100%; max-height: 92vh; overflow-y: auto; line-height: 1.45; }
+  .caja h2 { margin-top: 0; }
+  .caja ul { padding-left: 20px; }
+  #promo-opciones { display: flex; justify-content: center; gap: 12px; margin: 10px 0 4px; }
+  #promo-opciones button { background: #444; width: 78px; height: 78px; padding: 4px; }
+  #promo-opciones svg { width: 100%; height: 100%; }
+  .pie { text-align: center; color: var(--suave); font-size: 14px; margin-top: 16px; }
+  .pie a { color: #8ab4f8; }
+
+  #m-enlace { flex: 1 1 100%; text-align: center; background: var(--azul); color: #fff; padding: 11px 14px; border-radius: 6px; text-decoration: none; font-size: 15px; }
+  #m-enlace:hover { filter: brightness(1.12); }
+  #online { display: none; }
+  #online.on { display: block; }
+  #online input { background: #2b2b2b; color: var(--texto); border: 1px solid #666; border-radius: 6px; padding: 9px 10px; font-size: 17px; min-height: 42px; width: 100%; text-transform: uppercase; letter-spacing: .12em; }
+  #online .union { display: flex; gap: 8px; margin-top: 8px; }
+  #online .union input { flex: 1 1 auto; min-width: 0; }
+  #online .sep { color: var(--suave); font-size: 14px; margin: 10px 0 0; }
+  #on-sala { display: none; flex-direction: column; gap: 8px; }
+  #on-inicio { display: flex; flex-direction: column; gap: 8px; }
+  #online.en-sala #on-sala { display: flex; }
+  #online.en-sala #on-inicio { display: none; }
+  #on-cod { font-size: 24px; letter-spacing: .15em; font-weight: bold; }
+  #on-rival { font-size: 15px; color: var(--suave); }
+  #on-rival.ok { color: #9be39b; } #on-rival.mal { color: #ffb4a8; }
+  #on-oferta { display: none; background: #2e5a8a; border-radius: 6px; padding: 8px 10px; font-size: 15px; }
+  #on-oferta.on { display: block; }
+  #on-oferta .fila-botones { margin-top: 6px; }
+  #on-msg { margin-top: 8px; font-size: 14px; color: #ffd27a; min-height: 0; }
+  #on-msg:empty { display: none; }
+  #fin-nueva:disabled { opacity: .7; }
+
+  @media (max-width: 700px) {
+    .col-lateral { max-width: 100%; flex-basis: 100%; }
+    #historial { max-height: 140px; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs id="simbolos"></defs></svg>
+
+<h1>Cheaster</h1>
+<div class="sub">Ajedrez sin caballos · 6×6</div>
+
+<div class="app">
+  <div class="col-tablero">
+    <div id="estado" role="status" aria-live="polite">Cargando…</div>
+    <div class="marco" id="marco">
+      <div class="tablero" id="tablero" role="grid" aria-label="Tablero de Cheaster"></div>
+      <div id="fin-capa"><div class="titulo" id="fin-titulo"></div><div class="detalle" id="fin-detalle"></div><button id="fin-nueva">Nueva partida</button></div>
+    </div>
+  </div>
+
+  <div class="col-lateral">
+    <div class="grupo">
+      <h3>Partida</h3>
+      <div class="fila-botones">
+        <button id="b-nueva">Nueva partida</button>
+        <button id="b-deshacer" class="sec">↶ Deshacer</button>
+        <button id="b-girar" class="sec">⟳ Girar</button>
+        <button id="b-sonido" class="sec">🔊 Sonido</button>
+      </div>
+    </div>
+    <div class="grupo">
+      <h3>Modo de juego</h3>
+      <div class="fila-botones">
+        <button id="m-dos">2 jugadores</button>
+        <button id="m-ia">Contra la IA</button>
+        <button id="m-online">🌐 Online</button>
+        <a id="m-enlace" href="https://www.izarren.top/cheaster" target="_blank" rel="noopener" style="display:none">🌐 Jugar online con amigos en izarren.top</a>
+      </div>
+      <div id="ia-opciones">
+        <div class="fila-botones" id="niveles">
+          <button class="nivel" data-n="easy">Fácil</button>
+          <button class="nivel" data-n="medium">Medio</button>
+          <button class="nivel" data-n="hard">Difícil</button>
+        </div>
+        <div class="fila-botones" id="colores">
+          <button class="sec" data-c="1">Juego con blancas</button>
+          <button class="sec" data-c="-1">Juego con negras</button>
+        </div>
+      </div>
+    </div>
+    <div class="grupo" id="online">
+      <h3>Partida online</h3>
+      <div id="on-inicio">
+        <div class="fila-botones" id="on-colores">
+          <button class="sec" data-c="blancas">Blancas</button>
+          <button class="sec" data-c="negras">Negras</button>
+          <button class="sec on" data-c="azar">Al azar</button>
+        </div>
+        <button id="on-crear">Crear partida e invitar a un amigo</button>
+        <div class="sep">¿Te han invitado? Escribe el código:</div>
+        <div class="union" style="margin-top:0">
+          <input id="on-codigo" maxlength="8" placeholder="CÓDIGO" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Código de la partida">
+          <button id="on-unirse">Unirme</button>
+        </div>
+      </div>
+      <div id="on-sala">
+        <div>Código de la partida: <span id="on-cod"></span></div>
+        <div class="fila-botones"><button id="on-enlace">🔗 Invitar / copiar enlace</button></div>
+        <div id="on-rival"></div>
+        <div id="on-oferta"><span id="on-oferta-txt"></span><div class="fila-botones" id="on-oferta-bot"><button id="on-acepta">Aceptar tablas</button><button id="on-rechaza" class="sec">Rechazar</button></div></div>
+        <div class="fila-botones">
+          <button id="on-tablas" class="sec">½ Ofrecer tablas</button>
+          <button id="on-abandonar" class="sec">🏳 Abandonar</button>
+          <button id="on-reclamar" class="sec" style="display:none">Reclamar victoria</button>
+          <button id="on-salir" class="sec">Salir</button>
+        </div>
+      </div>
+      <div id="on-msg" role="status" aria-live="polite"></div>
+    </div>
+    <div class="grupo">
+      <h3>Jugadas</h3>
+      <div id="historial"></div>
+    </div>
+    <div class="fila-botones"><button id="b-reglas" class="sec">❓ Reglas</button></div>
+  </div>
+</div>
+
+<div class="pie">Un juego de <a href="https://www.izarren.top/" target="_blank" rel="noopener">izarren.top</a></div>
+
+<div class="capas" id="capa-promo"><div class="caja" style="text-align:center">
+  <div style="font-size:18px">Elige una pieza para coronar</div>
+  <div id="promo-opciones"></div>
+</div></div>
+
+<div class="capas" id="capa-reglas"><div class="caja">
+  <h2>Reglas de Cheaster</h2>
+  <p>Cheaster es ajedrez en un tablero de <b>6×6</b> y <b>sin caballos</b>. Cada bando tiene rey, dama, dos torres, dos alfiles y seis peones. Mueven primero las blancas.</p>
+  <ul>
+    <li>Las piezas se mueven como en el ajedrez normal.</li>
+    <li>El <b>peón</b> avanza <b>una casilla</b> (no hay salida doble) y captura en diagonal.</li>
+    <li>Al llegar al final, el peón <b>corona</b> en dama, torre o alfil (no hay caballos).</li>
+    <li>No hay enroque ni captura al paso.</li>
+    <li>No se puede dejar al propio rey en jaque. Gana quien da <b>jaque mate</b>.</li>
+    <li><b>Tablas:</b> rey ahogado, repetición de la misma posición tres veces, material insuficiente (rey solo, o rey y alfil contra rey) o 50 jugadas sin mover peón ni capturar.</li>
+  </ul>
+  <p>Toca una pieza para ver sus movimientos y toca la casilla de destino. Con <b>Deshacer</b> puedes volver atrás, y con <b>Girar</b> ves el tablero desde el otro lado.</p>
+  <div style="text-align:center"><button id="reglas-cerrar">Cerrar</button></div>
+</div></div>
+
+<script type="text/plain" id="engine-src">// engine.js - Reglas, tablas e IA de Cheaster (ajedrez 6x6 sin caballos).
+// Sin dependencias del navegador: funciona en la página, en un Web Worker y en Node (para las pruebas).
+//
+// Tablero: array de 36 casillas, índice = fila*6 + columna; fila 0 = arriba (lado negro), fila 5 = abajo (lado blanco).
+// Piezas: números con signo; positivo = blancas, negativo = negras. 1 peón, 2 alfil, 3 torre, 4 dama, 5 rey.
+// Peones: un solo paso, capturan en diagonal, coronan en Dama/Torre/Alfil. No hay enroque ni al paso.
+const N = 6;
+const P = 1, B = 2, R = 3, Q = 4, K = 5;
+const WHITE = 1, BLACK = -1;
+const VALOR = [0, 100, 300, 500, 900, 0];
+const MATE = 100000;
+
+const INICIAL = [
+  -R, -B, -Q, -K, -B, -R,
+  -P, -P, -P, -P, -P, -P,
+  0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0,
+  P, P, P, P, P, P,
+  R, B, Q, K, B, R
+];
+
+const DIR_ALFIL = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+const DIR_TORRE = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+const DIR_TODAS = DIR_ALFIL.concat(DIR_TORRE);
+
+function nuevoEstado() {
+  return { b: INICIAL.slice(), turn: WHITE, half: 0 };
+}
+function copiaEstado(s) { return { b: s.b.slice(), turn: s.turn, half: s.half }; }
+function clave(s) { return s.b.join(",") + "|" + s.turn; }
+
+// ¿Está la casilla sq atacada por el bando "by"?
+function atacada(b, sq, by) {
+  const r = (sq / N) | 0, c = sq % N;
+  // peones: un peón blanco ataca hacia arriba (fila-1), así que el atacante está una fila por debajo
+  const rp = by === WHITE ? r + 1 : r - 1;
+  if (rp >= 0 && rp < N) {
+    if (c > 0 && b[rp * N + c - 1] === by * P) return true;
+    if (c < N - 1 && b[rp * N + c + 1] === by * P) return true;
+  }
+  // rey
+  for (const [dr, dc] of DIR_TODAS) {
+    const rr = r + dr, cc = c + dc;
+    if (rr >= 0 && rr < N && cc >= 0 && cc < N && b[rr * N + cc] === by * K) return true;
+  }
+  // alfil/dama en diagonal, torre/dama en recta
+  for (const [dr, dc] of DIR_ALFIL) {
+    let rr = r + dr, cc = c + dc;
+    while (rr >= 0 && rr < N && cc >= 0 && cc < N) {
+      const p = b[rr * N + cc];
+      if (p) { if (p === by * B || p === by * Q) return true; break; }
+      rr += dr; cc += dc;
+    }
+  }
+  for (const [dr, dc] of DIR_TORRE) {
+    let rr = r + dr, cc = c + dc;
+    while (rr >= 0 && rr < N && cc >= 0 && cc < N) {
+      const p = b[rr * N + cc];
+      if (p) { if (p === by * R || p === by * Q) return true; break; }
+      rr += dr; cc += dc;
+    }
+  }
+  return false;
+}
+
+function posRey(b, color) {
+  const k = color * K;
+  for (let i = 0; i < 36; i++) if (b[i] === k) return i;
+  return -1;
+}
+function enJaque(s, color) {
+  const k = posRey(s.b, color);
+  return k >= 0 && atacada(s.b, k, -color);
+}
+
+// Movimientos pseudo-legales (sin comprobar el jaque propio). Cada uno: {from,to,promo,cap}
+function pseudo(s, soloCapturas) {
+  const b = s.b, us = s.turn, mov = [];
+  for (let from = 0; from < 36; from++) {
+    const p = b[from];
+    if (!p || (p > 0 ? WHITE : BLACK) !== us) continue;
+    const t = Math.abs(p), r = (from / N) | 0, c = from % N;
+    if (t === P) {
+      const dr = us === WHITE ? -1 : 1, rr = r + dr, ult = us === WHITE ? 0 : N - 1;
+      if (rr < 0 || rr >= N) continue;
+      for (const dc of [-1, 1]) {
+        const cc = c + dc;
+        if (cc < 0 || cc >= N) continue;
+        const to = rr * N + cc, o = b[to];
+        if (o && (o > 0 ? WHITE : BLACK) !== us) {
+          if (rr === ult) for (const pr of [Q, R, B]) mov.push({ from, to, promo: pr, cap: o });
+          else mov.push({ from, to, promo: 0, cap: o });
+        }
+      }
+      const to = rr * N + c;
+      if (!b[to]) {
+        if (rr === ult) { for (const pr of [Q, R, B]) mov.push({ from, to, promo: pr, cap: 0 }); }
+        else if (!soloCapturas) mov.push({ from, to, promo: 0, cap: 0 });
+      }
+    } else if (t === K) {
+      for (const [dr, dc] of DIR_TODAS) {
+        const rr = r + dr, cc = c + dc;
+        if (rr < 0 || rr >= N || cc < 0 || cc >= N) continue;
+        const to = rr * N + cc, o = b[to];
+        if (o && (o > 0 ? WHITE : BLACK) === us) continue;
+        if (soloCapturas && !o) continue;
+        mov.push({ from, to, promo: 0, cap: o });
+      }
+    } else {
+      const dirs = t === B ? DIR_ALFIL : t === R ? DIR_TORRE : DIR_TODAS;
+      for (const [dr, dc] of dirs) {
+        let rr = r + dr, cc = c + dc;
+        while (rr >= 0 && rr < N && cc >= 0 && cc < N) {
+          const to = rr * N + cc, o = b[to];
+          if (o) {
+            if ((o > 0 ? WHITE : BLACK) !== us) mov.push({ from, to, promo: 0, cap: o });
+            break;
+          }
+          if (!soloCapturas) mov.push({ from, to, promo: 0, cap: 0 });
+          rr += dr; cc += dc;
+        }
+      }
+    }
+  }
+  return mov;
+}
+
+// Aplica el movimiento sobre el estado y devuelve lo necesario para deshacerlo.
+function hacer(s, m) {
+  const b = s.b, p = b[m.from];
+  const u = { from: m.from, to: m.to, p, cap: b[m.to], half: s.half };
+  b[m.to] = m.promo ? (p > 0 ? m.promo : -m.promo) : p;
+  b[m.from] = 0;
+  s.half = (Math.abs(p) === P || u.cap) ? 0 : s.half + 1;
+  s.turn = -s.turn;
+  return u;
+}
+function deshacer(s, u) {
+  s.b[u.from] = u.p;
+  s.b[u.to] = u.cap;
+  s.half = u.half;
+  s.turn = -s.turn;
+}
+
+// Movimientos legales (los que no dejan al propio rey en jaque)
+function legales(s, soloCapturas) {
+  const res = [], us = s.turn;
+  for (const m of pseudo(s, soloCapturas)) {
+    const u = hacer(s, m);
+    const ok = !enJaque(s, us);
+    deshacer(s, u);
+    if (ok) res.push(m);
+  }
+  return res;
+}
+
+function materialInsuficiente(b) {
+  let alfiles = 0;
+  for (let i = 0; i < 36; i++) {
+    const t = Math.abs(b[i]);
+    if (t === P || t === R || t === Q) return false;
+    if (t === B) alfiles++;
+  }
+  return alfiles <= 1; // rey solo, o rey y un alfil contra rey
+}
+
+// Estado de la partida. repeticiones: objeto {clave: veces} con las posiciones ya ocurridas (incluida la actual)
+// Devuelve {fin:false} o {fin:true, tipo:'mate'|'ahogado'|'repeticion'|'material'|'cincuenta', ganador:1|-1|0}
+function estadoPartida(s, repeticiones) {
+  const mov = legales(s);
+  if (mov.length === 0) {
+    if (enJaque(s, s.turn)) return { fin: true, tipo: "mate", ganador: -s.turn };
+    return { fin: true, tipo: "ahogado", ganador: 0 };
+  }
+  if (materialInsuficiente(s.b)) return { fin: true, tipo: "material", ganador: 0 };
+  if (repeticiones && repeticiones[clave(s)] >= 3) return { fin: true, tipo: "repeticion", ganador: 0 };
+  if (s.half >= 100) return { fin: true, tipo: "cincuenta", ganador: 0 };
+  return { fin: false, jaque: enJaque(s, s.turn) };
+}
+
+// ---- Notación ----
+const COLS = "abcdef";
+const LETRA = { 2: "A", 3: "T", 4: "D", 5: "R" };
+function nombreCasilla(sq) { return COLS[sq % N] + (N - ((sq / N) | 0)); }
+// Notación estilo algebraico en español: R rey, D dama, T torre, A alfil. Se calcula ANTES de hacer el movimiento.
+function notacion(s, m) {
+  const p = s.b[m.from], t = Math.abs(p), dest = nombreCasilla(m.to), cap = m.cap ? "x" : "";
+  let txt;
+  if (t === P) {
+    txt = (m.cap ? COLS[m.from % N] + "x" : "") + dest + (m.promo ? "=" + LETRA[m.promo] : "");
+  } else {
+    let desamb = "";
+    const otros = legales(s).filter(o => o.to === m.to && o.from !== m.from && s.b[o.from] === p);
+    if (otros.length) {
+      const mismaCol = otros.some(o => o.from % N === m.from % N);
+      const mismaFila = otros.some(o => ((o.from / N) | 0) === ((m.from / N) | 0));
+      if (!mismaCol) desamb = COLS[m.from % N];
+      else if (!mismaFila) desamb = String(N - ((m.from / N) | 0));
+      else desamb = nombreCasilla(m.from);
+    }
+    txt = LETRA[t] + desamb + cap + dest;
+  }
+  const u = hacer(s, m);
+  const ent = legales(s).length === 0;
+  const jaque = enJaque(s, s.turn);
+  deshacer(s, u);
+  return txt + (jaque ? (ent ? "#" : "+") : "");
+}
+
+// ---- Evaluación y búsqueda ----
+function evaluar(s) {
+  // Valor desde el punto de vista del bando que mueve (negamax)
+  const b = s.b;
+  let score = 0, alfW = 0, alfB = 0;
+  for (let i = 0; i < 36; i++) {
+    const p = b[i];
+    if (!p) continue;
+    const t = Math.abs(p), col = p > 0 ? 1 : -1, r = (i / N) | 0, c = i % N;
+    let v = VALOR[t];
+    const avance = col === WHITE ? (N - 1 - r) : r;       // filas avanzadas
+    const centro = 2.5 - Math.abs(c - 2.5) + 2.5 - Math.abs(r - 2.5); // 0..5
+    if (t === P) v += avance * 12 + (c === 2 || c === 3 ? 6 : 0) + (avance >= 4 ? 25 : 0);
+    else if (t === B) { v += centro * 5; col === WHITE ? alfW++ : alfB++; }
+    else if (t === R) v += centro * 2;
+    else if (t === Q) v += centro * 3;
+    else if (t === K) { v += (avance <= 1 ? 8 : -avance * 6); } // el rey mejor atrás en el medio juego
+    score += col * v;
+  }
+  if (alfW >= 2) score += 25;
+  if (alfB >= 2) score -= 25;
+  return s.turn * score;
+}
+
+function ordenar(mov) {
+  mov.forEach(m => {
+    m.o = (m.cap ? 10 * VALOR[Math.abs(m.cap)] - 1 : 0) + (m.promo ? 800 : 0);
+  });
+  mov.sort((a, c) => c.o - a.o);
+}
+
+function Buscador(limiteMs) {
+  this.fin = Date.now() + limiteMs;
+  this.nodos = 0;
+  this.cancelado = false;
+}
+Buscador.prototype.quiescencia = function (s, alfa, beta, prof) {
+  const e = evaluar(s);
+  if (prof <= 0) return e;
+  if (e >= beta) return e;
+  if (e > alfa) alfa = e;
+  const mov = legales(s, true);
+  ordenar(mov);
+  for (const m of mov) {
+    const u = hacer(s, m);
+    const v = -this.quiescencia(s, -beta, -alfa, prof - 1);
+    deshacer(s, u);
+    if (v >= beta) return v;
+    if (v > alfa) alfa = v;
+  }
+  return alfa;
+};
+Buscador.prototype.negamax = function (s, prof, alfa, beta, ply) {
+  if ((++this.nodos & 1023) === 0 && Date.now() > this.fin) this.cancelado = true;
+  if (this.cancelado) return 0;
+  if (s.half >= 100) return 0;
+  const enJ = enJaque(s, s.turn);
+  if (prof <= 0 && !enJ) return this.quiescencia(s, alfa, beta, 4);
+  const mov = legales(s);
+  if (mov.length === 0) return enJ ? -(MATE - ply) : 0;
+  ordenar(mov);
+  let mejor = -Infinity;
+  for (const m of mov) {
+    const u = hacer(s, m);
+    const v = -this.negamax(s, prof - 1, -beta, -alfa, ply + 1);
+    deshacer(s, u);
+    if (this.cancelado) return 0;
+    if (v > mejor) mejor = v;
+    if (mejor > alfa) alfa = mejor;
+    if (alfa >= beta) break;
+  }
+  return mejor;
+};
+
+// Niveles: easy = casi aleatoria con capturas; medium = búsqueda corta; hard = búsqueda profunda con tiempo limitado
+const NIVELES = {
+  easy:   { prof: 1, ms: 150,  margen: 0,  azar: 0.35 },
+  medium: { prof: 3, ms: 500,  margen: 12, azar: 0 },
+  hard:   { prof: 8, ms: 1500, margen: 0,  azar: 0 }
+};
+
+// Elige el movimiento de la IA para el bando que mueve. repeticiones: {clave: veces} para evitar tablas cuando va ganando.
+function elegirMovimiento(estado, nivel, repeticiones) {
+  const cfg = NIVELES[nivel] || NIVELES.medium;
+  const s = copiaEstado(estado);
+  const mov = legales(s);
+  if (!mov.length) return null;
+  if (mov.length === 1) return mov[0];
+
+  if (cfg.azar && Math.random() < cfg.azar) {
+    // jugada al azar (con preferencia por capturas la mitad de las veces)
+    const caps = mov.filter(m => m.cap);
+    if (caps.length && Math.random() < 0.5) return caps[Math.floor(Math.random() * caps.length)];
+    return mov[Math.floor(Math.random() * mov.length)];
+  }
+
+  const busc = new Buscador(cfg.ms);
+  let resultado = null; // lista [{m, v}] de la última profundidad completada
+  ordenar(mov);
+  for (let prof = 1; prof <= cfg.prof; prof++) {
+    const lista = [];
+    for (const m of mov) {
+      const u = hacer(s, m);
+      let v = -busc.negamax(s, prof - 1, -Infinity, Infinity, 1);
+      const k = clave(s);
+      deshacer(s, u);
+      if (busc.cancelado) break;
+      // si va ganando, no aceptar tablas por repetición
+      if (repeticiones && (repeticiones[k] || 0) >= 2 && estadoMaterial(s) > 150) v = -MATE / 2;
+      lista.push({ m, v });
+    }
+    if (busc.cancelado) break;
+    resultado = lista;
+    lista.sort((a, c) => c.v - a.v);
+    if (lista[0].v > MATE - 50) break; // mate encontrado
+    // reordenar para la siguiente profundidad
+    mov.length = 0;
+    for (const x of lista) mov.push(x.m);
+  }
+  if (!resultado) return mov[0];
+  // valores exactos de todos los movimientos de la última profundidad completada: se elige al azar entre los casi iguales
+  const mejor = Math.max(...resultado.map(x => x.v));
+  const cand = resultado.filter(x => x.v >= mejor - cfg.margen);
+  return cand[Math.floor(Math.random() * cand.length)].m;
+}
+// Material desde el punto de vista del bando que acaba de mover (el contrario del turno actual)
+function estadoMaterial(s) {
+  let m = 0;
+  for (let i = 0; i < 36; i++) { const p = s.b[i]; if (p) m += (p > 0 ? 1 : -1) * VALOR[Math.abs(p)]; }
+  return -s.turn * m;
+}
+
+const API = {
+  N, P, B, R, Q, K, WHITE, BLACK, INICIAL, NIVELES,
+  nuevoEstado, copiaEstado, clave, atacada, enJaque, legales, hacer, deshacer,
+  estadoPartida, notacion, nombreCasilla, elegirMovimiento, materialInsuficiente, evaluar
+};
+if (typeof module !== "undefined" && module.exports) module.exports = API;
+</script>
+<script>
+(function () {
+"use strict";
+const SRC = document.getElementById("engine-src").textContent;
+const E = new Function(SRC + "\nreturn API;")();
+const { WHITE, BLACK, P, B, R, Q, K } = E;
+
+// ---------- Piezas dibujadas en SVG ----------
+const FORMAS = {
+  1: (f, s, d) => `<circle cx="50" cy="28" r="12" fill="${f}" stroke="${s}" stroke-width="3.5"/>
+    <path d="M37 80 C37 64 42 55 45 47 L55 47 C58 55 63 64 63 80 Z" fill="${f}" stroke="${s}" stroke-width="3.5" stroke-linejoin="round"/>
+    <rect x="38" y="43" width="24" height="7" rx="3.5" fill="${f}" stroke="${s}" stroke-width="3.5"/>`,
+  2: (f, s, d) => `<circle cx="50" cy="15" r="4.5" fill="${f}" stroke="${s}" stroke-width="3"/>
+    <path d="M50 20 C63 26 66 38 62 46 L38 46 C34 38 37 26 50 20 Z" fill="${f}" stroke="${s}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M47 28 L55 38" stroke="${d}" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M39 80 C39 66 42 58 44 51 L56 51 C58 58 61 66 61 80 Z" fill="${f}" stroke="${s}" stroke-width="3.5" stroke-linejoin="round"/>
+    <rect x="35" y="45" width="30" height="7" rx="3.5" fill="${f}" stroke="${s}" stroke-width="3.5"/>`,
+  3: (f, s, d) => `<path d="M28 18 h12 v10 h6 v-10 h8 v10 h6 v-10 h12 v26 H28 Z" fill="${f}" stroke="${s}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M34 44 L30 80 H70 L66 44 Z" fill="${f}" stroke="${s}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M30 40 H70" stroke="${d}" stroke-width="2.5"/>`,
+  4: (f, s, d) => `<path d="M24 34 L34 60 L38 30 L46 58 L50 26 L54 58 L62 30 L66 60 L76 34 L71 78 H29 Z" fill="${f}" stroke="${s}" stroke-width="3.5" stroke-linejoin="round"/>
+    <circle cx="24" cy="31" r="4.5" fill="${f}" stroke="${s}" stroke-width="3"/><circle cx="38" cy="26" r="4.5" fill="${f}" stroke="${s}" stroke-width="3"/>
+    <circle cx="50" cy="22" r="4.5" fill="${f}" stroke="${s}" stroke-width="3"/><circle cx="62" cy="26" r="4.5" fill="${f}" stroke="${s}" stroke-width="3"/>
+    <circle cx="76" cy="31" r="4.5" fill="${f}" stroke="${s}" stroke-width="3"/>
+    <path d="M32 70 H68" stroke="${d}" stroke-width="2.5"/>`,
+  5: (f, s, d) => `<rect x="46" y="8" width="8" height="26" rx="2" fill="${f}" stroke="${s}" stroke-width="3.2"/>
+    <rect x="37" y="16" width="26" height="8" rx="2" fill="${f}" stroke="${s}" stroke-width="3.2"/>
+    <path d="M30 80 C26 58 34 44 50 40 C66 44 74 58 70 80 Z" fill="${f}" stroke="${s}" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M36 68 H64" stroke="${d}" stroke-width="2.5"/>`
+};
+const BASE = (f, s) => `<rect x="22" y="80" width="56" height="10" rx="4" fill="${f}" stroke="${s}" stroke-width="3.5"/>`;
+(function defineSimbolos() {
+  let h = "";
+  for (const [pref, f, s, d] of [["w", "#fafafa", "#1d1d1d", "#9a9a9a"], ["b", "#2e2e2e", "#000", "#cfcfcf"]]) {
+    for (let t = 1; t <= 5; t++) {
+      h += `<symbol id="${pref}${t}" viewBox="0 0 100 100">${FORMAS[t](f, s, d)}${BASE(f, s)}</symbol>`;
+    }
+  }
+  document.getElementById("simbolos").innerHTML = h;
+})();
+const pieza = (p, cls) => `<svg class="pz ${cls || ""}" viewBox="0 0 100 100"><use href="#${p > 0 ? "w" : "b"}${Math.abs(p)}"/></svg>`;
+const NOMBRE = { 1: "peón", 2: "alfil", 3: "torre", 4: "dama", 5: "rey" };
+
+// ---------- Estado ----------
+const CLAVE = "cheaster-v2";
+let ajustes = { vsIA: false, nivel: "medium", color: WHITE, girado: false, sonido: true };
+let movimientos = [];            // [{from,to,promo}]
+let sans = [];                   // notación de cada jugada
+let S, rep, legalesAhora = [], resultado = null;
+let sel = null, ultima = null, promoPend = null, token = 0, pensando = false;
+let worker = null;
+// Modo online: enLinea = estamos en el modo (con o sin partida); sesion = datos de la partida online en curso
+let enLinea = false, sesion = null, sock = null, conectadoServer = false, esperando = false;
+const SERVIDOR = "";
+const MODO_ITCH = "" === "itch";   // versión para itch.io: solo contra la IA, con enlace a la web para jugar online   // "" = el mismo sitio desde el que se abre la página
+const URL_SERVIDOR = SERVIDOR || (/^https?:$/.test(location.protocol) ? "" : "https://cheaster.izarren.top");
+const CLAVE_ON = "cheaster-online";
+
+function guardar() { if (enLinea) return; try { localStorage.setItem(CLAVE, JSON.stringify({ a: ajustes, m: movimientos })); } catch (e) {} }
+function cargar() {
+  try {
+    const d = JSON.parse(localStorage.getItem(CLAVE) || "null");
+    if (d && d.a) Object.assign(ajustes, d.a);
+    return d && Array.isArray(d.m) ? d.m : [];
+  } catch (e) { return []; }
+}
+
+function reconstruir(lista) {
+  S = E.nuevoEstado(); rep = {}; rep[E.clave(S)] = 1; sans = []; movimientos = [];
+  for (const mv of lista) {
+    const m = E.legales(S).find(x => x.from === mv.from && x.to === mv.to && (x.promo || 0) === (mv.promo || 0));
+    if (!m) break;
+    sans.push(E.notacion(S, m));
+    E.hacer(S, m);
+    const k = E.clave(S); rep[k] = (rep[k] || 0) + 1;
+    movimientos.push({ from: m.from, to: m.to, promo: m.promo || 0 });
+  }
+  ultima = movimientos.length ? movimientos[movimientos.length - 1] : null;
+  refrescar();
+}
+
+// Estado de la partida: lo decide el motor, salvo abandono / tablas pactadas / ausencia, que vienen del servidor
+function estadoActual() {
+  const est = E.estadoPartida(S, rep);
+  if (!est.fin && sesion && sesion.fin) return { fin: true, tipo: sesion.fin.tipo, ganador: sesion.fin.ganador };
+  return est;
+}
+function refrescar() {
+  legalesAhora = E.legales(S);
+  const est = estadoActual();
+  resultado = est.fin ? est : null;
+  sel = null;
+  dibujar(est);
+}
+
+// ---------- Dibujo ----------
+const cont = document.getElementById("tablero");
+function dibujar(est) {
+  est = est || estadoActual();
+  const targets = sel !== null ? legalesAhora.filter(m => m.from === sel) : [];
+  const reyJaque = est.fin ? (est.tipo === "mate" ? E.enJaque(S, S.turn) && 1 : false) : est.jaque;
+  const posRey = (est.jaque || (est.fin && est.tipo === "mate")) ? S.b.indexOf(S.turn * K) : -1;
+  let html = "";
+  for (let vr = 0; vr < 6; vr++) {
+    for (let vc = 0; vc < 6; vc++) {
+      const r = ajustes.girado ? 5 - vr : vr, c = ajustes.girado ? 5 - vc : vc;
+      const i = r * 6 + c, p = S.b[i];
+      const cls = ["cas", (r + c) % 2 ? "o" : "c"];
+      if (ultima && (i === ultima.from || i === ultima.to)) cls.push("ultima");
+      if (i === sel) cls.push("sel");
+      if (i === posRey) cls.push("jaque");
+      if (ultima && i === ultima.to) cls.push("nuevo");
+      const esDest = targets.some(m => m.to === i);
+      let inner = "";
+      if (vc === 0) inner += `<span class="coord fila">${6 - r}</span>`;
+      if (vr === 5) inner += `<span class="coord col">${"abcdef"[c]}</span>`;
+      if (p) inner += pieza(p);
+      if (esDest) inner += p ? '<span class="aro"></span>' : '<span class="punto"></span>';
+      const nombre = E.nombreCasilla(i) + (p ? ", " + NOMBRE[Math.abs(p)] + (p > 0 ? " blanco" : " negro") : ", vacía");
+      html += `<div class="${cls.join(" ")}" data-i="${i}" role="gridcell" tabindex="0" aria-label="${nombre}">${inner}</div>`;
+    }
+  }
+  cont.innerHTML = html;
+  actualizarEstado(est);
+  actualizarHistorial();
+  actualizarControles();
+  actualizarOnline();
+  avisaAltura();
+}
+
+const bando = c => c === WHITE ? "blancas" : "negras";
+function actualizarEstado(est) {
+  const el = document.getElementById("estado");
+  el.className = "";
+  const capa = document.getElementById("fin-capa");
+  capa.classList.remove("on");
+  if (est.fin) {
+    let t, d = "";
+    if (est.tipo === "mate") {
+      t = "¡Jaque mate!";
+      if (sesion) d = est.ganador === sesion.color ? "¡Has ganado!" : "Has perdido";
+      else d = ajustes.vsIA ? (est.ganador === ajustes.color ? "¡Has ganado!" : "Gana la IA") : "Ganan las " + bando(est.ganador);
+    } else if (est.tipo === "abandono") {
+      t = "Abandono";
+      d = est.ganador === sesion.color ? "Tu rival ha abandonado. ¡Has ganado!" : "Has abandonado la partida.";
+    } else if (est.tipo === "ausencia") {
+      t = "Victoria por ausencia";
+      d = est.ganador === sesion.color ? "Tu rival no ha vuelto. ¡Has ganado!" : "No volviste a tiempo: gana tu rival.";
+    } else {
+      t = "Tablas";
+      d = { ahogado: "Rey ahogado: no hay jugadas posibles y no hay jaque.", repeticion: "La misma posición se ha repetido tres veces.", material: "Material insuficiente para dar mate.", cincuenta: "50 jugadas sin mover peón ni capturar.", acuerdo: "Los dos jugadores han acordado tablas." }[est.tipo];
+    }
+    el.classList.add("fin");
+    el.textContent = t + " " + d;
+    document.getElementById("fin-titulo").textContent = t;
+    const bt = document.getElementById("fin-nueva");
+    if (sesion) {
+      bt.textContent = "Revancha"; bt.disabled = !!sesion.revancha.yo;
+      if (sesion.revancha.yo) d += " Esperando a que tu rival acepte la revancha…";
+      else if (sesion.revancha.rival) d += " Tu rival quiere la revancha.";
+    } else { bt.textContent = "Nueva partida"; bt.disabled = false; }
+    document.getElementById("fin-detalle").textContent = d;
+    capa.classList.add("on");
+    return;
+  }
+  if (est.jaque) el.classList.add("jaque");
+  if (enLinea) {
+    if (!sesion) { el.textContent = "Crea una partida online o únete con un código"; return; }
+    if (!conectadoServer) { el.textContent = "Sin conexión con el servidor… reconectando"; return; }
+    if (!sesion.hayRival) { el.textContent = "Esperando a tu rival… envíale el enlace"; return; }
+    el.textContent = (est.jaque ? "¡Jaque! " : "") + (S.turn === sesion.color ? `Tu turno (${bando(S.turn)})` : "Turno de tu rival") + (sesion.rivalConectado ? "" : " · rival desconectado");
+    return;
+  }
+  if (pensando) { el.textContent = "La IA está pensando…"; return; }
+  const turno = bando(S.turn);
+  if (ajustes.vsIA) el.textContent = (est.jaque ? "¡Jaque! " : "") + (S.turn === ajustes.color ? `Tu turno (${turno})` : "Turno de la IA");
+  else el.textContent = (est.jaque ? "¡Jaque! " : "") + `Turno de las ${turno}`;
+}
+
+function actualizarHistorial() {
+  const h = document.getElementById("historial");
+  if (!sans.length) { h.innerHTML = '<div class="vacio">Aún no hay jugadas.</div>'; return; }
+  let html = "";
+  for (let i = 0; i < sans.length; i += 2) {
+    const a = `<span class="${i === sans.length - 1 ? "ult" : ""}">${sans[i]}</span>`;
+    const b = sans[i + 1] ? `<span class="${i + 1 === sans.length - 1 ? "ult" : ""}">${sans[i + 1]}</span>` : "<span></span>";
+    html += `<div class="par"><span class="n">${i / 2 + 1}.</span>${a}${b}</div>`;
+  }
+  h.innerHTML = html;
+  h.scrollTop = h.scrollHeight;
+}
+
+function actualizarControles() {
+  document.getElementById("m-dos").classList.toggle("on", !enLinea && !ajustes.vsIA);
+  document.getElementById("m-ia").classList.toggle("on", !enLinea && ajustes.vsIA);
+  document.getElementById("m-online").classList.toggle("on", enLinea);
+  document.getElementById("ia-opciones").classList.toggle("on", !enLinea && ajustes.vsIA);
+  document.querySelectorAll("#niveles button").forEach(b => b.classList.toggle("on", b.dataset.n === ajustes.nivel));
+  document.querySelectorAll("#colores button").forEach(b => b.classList.toggle("on", +b.dataset.c === ajustes.color));
+  document.getElementById("b-sonido").textContent = ajustes.sonido ? "🔊 Sonido" : "🔇 Sin sonido";
+  document.getElementById("b-deshacer").disabled = enLinea || movimientos.length === 0 || (ajustes.vsIA && movimientos.length === 1 && ajustes.color === BLACK);
+  document.getElementById("b-nueva").disabled = enLinea;
+}
+
+// ---------- Sonidos ----------
+let audio = null;
+function tono(f, dur, tipo, vol, retraso) {
+  if (!ajustes.sonido) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === "suspended") audio.resume();
+    const t0 = audio.currentTime + (retraso || 0), o = audio.createOscillator(), g = audio.createGain();
+    o.type = tipo || "sine"; o.frequency.setValueAtTime(f, t0);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol || 0.15, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(audio.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+  } catch (e) {}
+}
+function sonido(que) {
+  if (que === "mover") { tono(300, 0.08, "triangle", 0.18); }
+  else if (que === "captura") { tono(180, 0.12, "square", 0.12); tono(120, 0.14, "triangle", 0.18, 0.04); }
+  else if (que === "jaque") { tono(660, 0.1, "sine", 0.15); tono(880, 0.14, "sine", 0.15, 0.1); }
+  else if (que === "fin") { tono(523, 0.18, "sine", 0.17); tono(659, 0.18, "sine", 0.17, 0.16); tono(784, 0.3, "sine", 0.17, 0.32); }
+}
+
+// ---------- Jugar ----------
+function juegaHumano() {
+  if (enLinea) return !!sesion && conectadoServer && sesion.hayRival && !esperando && !resultado && !promoPend && S.turn === sesion.color;
+  return !resultado && !pensando && !promoPend && (!ajustes.vsIA || S.turn === ajustes.color);
+}
+
+function aplicar(m) {
+  if (enLinea) { enviarJugada(m); return; }   // en línea manda el servidor; la jugada llega de vuelta para los dos
+  aplicarLocal(m);
+}
+function aplicarLocal(m) {
+  const san = E.notacion(S, m);
+  const capt = !!m.cap;
+  E.hacer(S, m);
+  const k = E.clave(S); rep[k] = (rep[k] || 0) + 1;
+  sans.push(san);
+  movimientos.push({ from: m.from, to: m.to, promo: m.promo || 0 });
+  ultima = movimientos[movimientos.length - 1];
+  guardar();
+  refrescar();
+  sonido(resultado ? "fin" : (E.enJaque(S, S.turn) ? "jaque" : (capt ? "captura" : "mover")));
+  if (!enLinea) turnoIA();
+}
+
+cont.addEventListener("click", e => {
+  const el = e.target.closest(".cas"); if (!el) return;
+  alClick(+el.dataset.i);
+});
+cont.addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const el = e.target.closest(".cas"); if (!el) return;
+  e.preventDefault(); alClick(+el.dataset.i);
+});
+
+function alClick(i) {
+  if (!juegaHumano()) return;
+  const p = S.b[i];
+  if (sel !== null) {
+    const opciones = legalesAhora.filter(m => m.from === sel && m.to === i);
+    if (opciones.length) {
+      if (opciones.length > 1) { pedirPromocion(opciones); return; }
+      aplicar(opciones[0]); return;
+    }
+  }
+  if (p && (p > 0 ? WHITE : BLACK) === S.turn && legalesAhora.some(m => m.from === i)) sel = (sel === i ? null : i);
+  else sel = null;
+  dibujar();
+}
+
+function pedirPromocion(opciones) {
+  promoPend = opciones;
+  const cont2 = document.getElementById("promo-opciones");
+  cont2.innerHTML = "";
+  for (const m of opciones) {
+    const b = document.createElement("button");
+    b.innerHTML = pieza(S.turn * m.promo);
+    b.setAttribute("aria-label", "Coronar en " + NOMBRE[m.promo]);
+    b.addEventListener("click", () => { document.getElementById("capa-promo").classList.remove("on"); promoPend = null; aplicar(m); });
+    cont2.appendChild(b);
+  }
+  document.getElementById("capa-promo").classList.add("on");
+}
+
+// ---------- IA en un Web Worker ----------
+function crearWorker() {
+  try {
+    const blob = new Blob([SRC + "\nonmessage=function(e){var d=e.data;postMessage({id:d.id,m:API.elegirMovimiento(d.s,d.nivel,d.rep)});};"], { type: "text/javascript" });
+    const url = URL.createObjectURL(blob);
+    const w = new Worker(url);
+    URL.revokeObjectURL(url);
+    return w;
+  } catch (e) { return null; }
+}
+function parar() { token++; pensando = false; if (worker) { worker.terminate(); worker = null; } }
+
+function turnoIA() {
+  if (enLinea || !ajustes.vsIA || resultado || S.turn === ajustes.color) return;
+  pensando = true; actualizarEstado({ fin: false, jaque: false });
+  const id = ++token;
+  const datos = { id, s: { b: S.b.slice(), turn: S.turn, half: S.half }, nivel: ajustes.nivel, rep: Object.assign({}, rep) };
+  const alRecibir = m => {
+    if (id !== token) return;
+    pensando = false;
+    if (m) aplicar(m); else refrescar();
+  };
+  const minimo = ajustes.nivel === "easy" ? 350 : 250; // que no responda instantáneamente
+  const t0 = Date.now();
+  const entregar = m => setTimeout(() => alRecibir(m), Math.max(0, minimo - (Date.now() - t0)));
+  if (!worker) worker = crearWorker();
+  if (worker) {
+    worker.onmessage = ev => { if (ev.data.id === id) entregar(ev.data.m); };
+    worker.onerror = () => { worker = null; setTimeout(() => entregar(E.elegirMovimiento(datos.s, datos.nivel, datos.rep)), 30); };
+    worker.postMessage(datos);
+  } else {
+    setTimeout(() => entregar(E.elegirMovimiento(datos.s, datos.nivel, datos.rep)), 30);
+  }
+}
+
+// ---------- Botones ----------
+function nueva() { parar(); document.getElementById("capa-promo").classList.remove("on"); promoPend = null; reconstruir([]); guardar(); turnoIA(); }
+function deshacer() {
+  if (!movimientos.length) return;
+  parar(); document.getElementById("capa-promo").classList.remove("on"); promoPend = null;
+  let quitar = 1;
+  if (ajustes.vsIA && movimientos.length >= 2) quitar = (S.turn === ajustes.color) ? 2 : 1;
+  const lista = movimientos.slice(0, movimientos.length - quitar);
+  reconstruir(lista); guardar();
+  // si tras deshacer le toca a la IA (por ejemplo, humano con negras y solo queda la jugada de la IA), que juegue
+  turnoIA();
+}
+document.getElementById("b-nueva").addEventListener("click", nueva);
+document.getElementById("fin-nueva").addEventListener("click", () => { if (sesion) pedirRevancha(); else nueva(); });
+document.getElementById("b-deshacer").addEventListener("click", deshacer);
+document.getElementById("b-girar").addEventListener("click", () => { ajustes.girado = !ajustes.girado; guardar(); dibujar(); });
+document.getElementById("b-sonido").addEventListener("click", () => { ajustes.sonido = !ajustes.sonido; guardar(); actualizarControles(); sonido("mover"); });
+document.getElementById("m-dos").addEventListener("click", () => { if (enLinea) salirOnline(); if (!ajustes.vsIA) return; ajustes.vsIA = false; ajustes.girado = false; guardar(); nueva(); });
+document.getElementById("m-ia").addEventListener("click", () => { if (enLinea) salirOnline(); if (ajustes.vsIA) return; ajustes.vsIA = true; ajustes.girado = ajustes.color === BLACK; guardar(); nueva(); });
+document.querySelectorAll("#niveles button").forEach(b => b.addEventListener("click", () => { ajustes.nivel = b.dataset.n; guardar(); if (movimientos.length === 0 || resultado) actualizarControles(); else nueva(); }));
+document.querySelectorAll("#colores button").forEach(b => b.addEventListener("click", () => { ajustes.color = +b.dataset.c; ajustes.girado = ajustes.color === BLACK; guardar(); nueva(); }));
+document.getElementById("b-reglas").addEventListener("click", () => document.getElementById("capa-reglas").classList.add("on"));
+document.getElementById("reglas-cerrar").addEventListener("click", () => document.getElementById("capa-reglas").classList.remove("on"));
+document.getElementById("capa-reglas").addEventListener("click", e => { if (e.target.id === "capa-reglas") e.target.classList.remove("on"); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") document.getElementById("capa-reglas").classList.remove("on"); });
+
+
+// ---------- Modo online ----------
+function leerSesion() { try { return JSON.parse(localStorage.getItem(CLAVE_ON) || "null"); } catch (e) { return null; } }
+function guardarSesion() {
+  try {
+    if (sesion && sesion.token) localStorage.setItem(CLAVE_ON, JSON.stringify({ codigo: sesion.codigo, token: sesion.token, t: Date.now(), fin: !!sesion.fin }));
+  } catch (e) {}
+}
+function olvidarSesion() { try { localStorage.removeItem(CLAVE_ON); } catch (e) {} }
+const elOn = id => document.getElementById(id);
+let msgTimer = null;
+function mensajeOnline(txt, ms) {
+  const el = elOn("on-msg"); el.textContent = txt || "";
+  clearTimeout(msgTimer);
+  if (txt && ms !== 0) msgTimer = setTimeout(() => { el.textContent = ""; }, ms || 6000);
+}
+function enlaceInvitacion() {
+  const base = SERVIDOR ? SERVIDOR.replace(/\/+$/, "") + "/" : location.origin + location.pathname;
+  return base + "?sala=" + sesion.codigo;
+}
+
+let cargandoLib = null;
+function cargarLib() {
+  if (window.io) return Promise.resolve();
+  if (cargandoLib) return cargandoLib;
+  cargandoLib = new Promise((ok, ko) => {
+    const sc = document.createElement("script");
+    sc.src = URL_SERVIDOR + "/socket.io/socket.io.js";
+    sc.onload = ok;
+    sc.onerror = () => { cargandoLib = null; ko(new Error("sin servidor")); };
+    document.head.appendChild(sc);
+  });
+  return cargandoLib;
+}
+function conectar() {
+  return cargarLib().then(() => {
+    if (sock) return sock;
+    sock = window.io(URL_SERVIDOR || undefined, { transports: ["websocket", "polling"], reconnection: true, reconnectionDelayMax: 4000 });
+    sock.on("connect", () => {
+      conectadoServer = true;
+      if (sesion && sesion.token) { // reconexión: volver a la sala y recibir el estado al día
+        sock.emit("unirse", { codigo: sesion.codigo, token: sesion.token }, r => {
+          if (r && r.ok) aplicarVista(r.estado);
+          else if (r) { mensajeOnline(r.error, 0); perderSesion(); }
+        });
+      }
+      actualizarOnline(); actualizarEstadoSolo();
+    });
+    sock.on("disconnect", () => { conectadoServer = false; esperando = false; actualizarOnline(); actualizarEstadoSolo(); });
+    sock.on("connect_error", () => { conectadoServer = false; actualizarOnline(); actualizarEstadoSolo(); });
+    sock.on("estado", v => { if (sesion && v.codigo === sesion.codigo) aplicarVista(v); });
+    sock.on("jugada", jugadaRemota);
+    sock.on("desplazado", () => { mensajeOnline("Has abierto esta partida en otra pestaña o dispositivo.", 0); perderSesion(); });
+    return sock;
+  });
+}
+function actualizarEstadoSolo() { if (S) actualizarEstado(estadoActual()); }
+
+function perderSesion() {
+  olvidarSesion(); sesion = null; esperando = false;
+  if (enLinea) { reconstruir([]); }
+}
+function entrarOnline() {
+  if (enLinea) return;
+  parar(); guardar();
+  enLinea = true; sesion = null; esperando = false;
+  ajustes.girado = false;
+  reconstruir([]);
+}
+function salirOnline() {
+  if (!enLinea) return;
+  if (sock && sesion) sock.emit("salir", {});
+  olvidarSesion();
+  enLinea = false; sesion = null; esperando = false; mensajeOnline("");
+  const lista = cargar();       // vuelve la partida local que había antes
+  reconstruir(lista);
+  if (ajustes.vsIA && !resultado) turnoIA();
+}
+function errorConexion() { mensajeOnline("No se puede conectar con el servidor de partidas. Inténtalo de nuevo en un momento.", 0); }
+
+function crearPartida() {
+  if (!enLinea) entrarOnline();
+  const col = document.querySelector("#on-colores button.on");
+  mensajeOnline("Creando la partida…", 0);
+  conectar().then(s => s.emit("crear", { color: col ? col.dataset.c : "azar" }, r => {
+    if (!r || !r.ok) { mensajeOnline(r ? r.error : "Sin respuesta del servidor", 0); return; }
+    mensajeOnline("");
+    sesion = { token: r.token, revancha: {} };
+    aplicarVista(r.estado);
+  })).catch(errorConexion);
+}
+function unirseAPartida(codigo, desdeEnlace) {
+  codigo = (codigo || "").trim().toUpperCase();
+  if (!codigo) { mensajeOnline("Escribe el código de la partida."); return; }
+  if (!enLinea) entrarOnline();
+  const g = leerSesion();
+  const token = g && g.codigo === codigo ? g.token : "";
+  mensajeOnline("Conectando…", 0);
+  conectar().then(s => s.emit("unirse", { codigo, token }, r => {
+    if (!r || !r.ok) {
+      mensajeOnline(r ? r.error : "Sin respuesta del servidor", 0);
+      if (g && g.codigo === codigo) olvidarSesion();
+      return;
+    }
+    mensajeOnline("");
+    sesion = { token: r.token, revancha: {} };
+    aplicarVista(r.estado);
+    if (desdeEnlace) { try { history.replaceState(null, "", location.pathname); } catch (e) {} }
+  })).catch(errorConexion);
+}
+
+// Aplica el estado completo que manda el servidor (al entrar, al reconectar, cuando cambia algo que no es una jugada)
+function aplicarVista(v) {
+  const antes = sesion || {};
+  const cambioPartida = antes.codigo !== v.codigo || antes.partida !== v.partida || antes.color !== v.color;
+  Object.assign(sesion, {
+    codigo: v.codigo, color: v.color, hayRival: v.hayRival, rivalConectado: v.rivalConectado,
+    ausenteDesde: (!v.hayRival || v.rivalConectado) ? 0 : Date.now() - (v.rivalAusenteMs || 0),
+    oferta: v.oferta, fin: v.fin, revancha: v.revancha, partida: v.partida, ausenciaMs: v.ausenciaMs || 60000
+  });
+  if (cambioPartida) ajustes.girado = v.color === BLACK;
+  esperando = false;
+  guardarSesion();
+  const ult = movimientos.length ? movimientos[movimientos.length - 1] : null, vu = v.moves.length ? v.moves[v.moves.length - 1] : null;
+  const igual = movimientos.length === v.moves.length && (!ult || (ult.from === vu.from && ult.to === vu.to));
+  if (igual && !cambioPartida) { resultado = estadoActual().fin ? estadoActual() : null; dibujar(); }
+  else { document.getElementById("capa-promo").classList.remove("on"); promoPend = null; reconstruir(v.moves); }
+}
+function enviarJugada(m) {
+  if (!sock || !sesion) return;
+  esperando = true; sel = null;
+  sock.emit("jugar", { from: m.from, to: m.to, promo: m.promo || 0 }, r => {
+    esperando = false;
+    if (r && !r.ok) { mensajeOnline(r.error); pedirSync(); }
+  });
+  dibujar();
+}
+function pedirSync() {
+  if (sock && sesion) sock.emit("sync", {}, r => { if (r && r.ok) aplicarVista(r.estado); });
+}
+function jugadaRemota(d) {
+  if (!sesion) return;
+  if (d.n !== movimientos.length + 1) { if (d.n > movimientos.length + 1) pedirSync(); return; }
+  const m = E.legales(S).find(x => x.from === d.from && x.to === d.to && (x.promo || 0) === (d.promo || 0));
+  if (!m) { pedirSync(); return; }
+  sesion.oferta = 0; esperando = false;
+  aplicarLocal(m);
+  if (d.fin && !sesion.fin) sesion.fin = d.fin;
+  if (S.turn === sesion.color) avisarTurno();
+}
+function pedirRevancha() {
+  if (!sock || !sesion) return;
+  sock.emit("revancha", {}, r => { if (r && !r.ok) mensajeOnline(r.error); });
+}
+// Si la pestaña está en segundo plano, avisa en el título de que es tu turno
+const TITULO = document.title;
+function avisarTurno() {
+  if (!document.hidden) return;
+  document.title = "● Tu turno · Cheaster";
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) document.title = TITULO; });
+
+function actualizarOnline() {
+  const panel = elOn("online");
+  panel.classList.toggle("on", enLinea);
+  panel.classList.toggle("en-sala", enLinea && !!sesion && !!sesion.codigo);
+  if (!enLinea || !sesion || !sesion.codigo) return;
+  elOn("on-cod").textContent = sesion.codigo;
+  const r = elOn("on-rival");
+  let txt, cls = "";
+  const ausente = sesion.ausenteDesde ? Date.now() - sesion.ausenteDesde : 0;
+  if (!conectadoServer) { txt = "Sin conexión con el servidor. Reconectando…"; cls = "mal"; }
+  else if (!sesion.hayRival) { txt = "Esperando a tu rival. Envíale el enlace o el código."; }
+  else if (!sesion.rivalConectado) { txt = "Tu rival se ha desconectado." + (ausente >= sesion.ausenciaMs && !resultado ? " Ya puedes reclamar la victoria." : " Espera un momento a que vuelva."); cls = "mal"; }
+  else { txt = `Rival conectado. Juegas con las ${bando(sesion.color)}.`; cls = "ok"; }
+  r.textContent = txt; r.className = cls;
+  const hay = sesion.hayRival && !resultado;
+  elOn("on-tablas").disabled = !hay || !movimientos.length || sesion.oferta !== 0 || !conectadoServer;
+  elOn("on-abandonar").disabled = !hay || !conectadoServer;
+  elOn("on-reclamar").style.display = (hay && !sesion.rivalConectado && ausente >= sesion.ausenciaMs) ? "" : "none";
+  const of = elOn("on-oferta");
+  if (!resultado && sesion.oferta && sesion.oferta === -sesion.color) {
+    of.classList.add("on"); elOn("on-oferta-txt").textContent = "Tu rival te ofrece tablas."; elOn("on-oferta-bot").style.display = "";
+  } else if (!resultado && sesion.oferta === sesion.color) {
+    of.classList.add("on"); elOn("on-oferta-txt").textContent = "Has ofrecido tablas. Esperando respuesta…"; elOn("on-oferta-bot").style.display = "none";
+  } else of.classList.remove("on");
+}
+setInterval(() => { if (enLinea && sesion && sesion.hayRival && !sesion.rivalConectado) actualizarOnline(); }, 1000);
+
+elOn("m-online").addEventListener("click", () => { if (!enLinea) entrarOnline(); });
+elOn("on-colores").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#on-colores button").forEach(x => x.classList.toggle("on", x === b));
+});
+elOn("on-crear").addEventListener("click", crearPartida);
+elOn("on-unirse").addEventListener("click", () => unirseAPartida(elOn("on-codigo").value));
+elOn("on-codigo").addEventListener("keydown", e => { if (e.key === "Enter") unirseAPartida(elOn("on-codigo").value); });
+elOn("on-enlace").addEventListener("click", () => {
+  if (!sesion) return;
+  const url = enlaceInvitacion(), texto = "Juega conmigo a Cheaster (ajedrez 6x6 sin caballos): " + url;
+  if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) {
+    navigator.share({ title: "Cheaster", text: "Juega conmigo a Cheaster", url }).catch(() => {});
+    return;
+  }
+  const mostrar = () => mensajeOnline("Enlace: " + url, 0);
+  try { navigator.clipboard.writeText(texto).then(() => mensajeOnline("Enlace copiado. Pégalo en un mensaje a tu amigo."), mostrar); } catch (e) { mostrar(); }
+});
+elOn("on-tablas").addEventListener("click", () => { if (sock) sock.emit("ofrecerTablas", {}, r => { if (r && !r.ok) mensajeOnline(r.error); }); });
+elOn("on-acepta").addEventListener("click", () => { if (sock) sock.emit("responderTablas", { acepta: true }, r => { if (r && !r.ok) mensajeOnline(r.error); }); });
+elOn("on-rechaza").addEventListener("click", () => { if (sock) sock.emit("responderTablas", { acepta: false }, r => { if (r && !r.ok) mensajeOnline(r.error); }); });
+elOn("on-abandonar").addEventListener("click", () => {
+  if (sock && sesion && confirm("¿Seguro que quieres abandonar? Perderás la partida.")) sock.emit("abandonar", {}, r => { if (r && !r.ok) mensajeOnline(r.error); });
+});
+elOn("on-reclamar").addEventListener("click", () => { if (sock) sock.emit("reclamar", {}, r => { if (r && !r.ok) mensajeOnline(r.error); }); });
+elOn("on-salir").addEventListener("click", () => {
+  if (sesion && !resultado && sesion.hayRival && movimientos.length && !confirm("Si sales, tu rival se quedará esperándote y no podrás volver a esta partida desde aquí. ¿Salir?")) return;
+  salirOnline();
+});
+
+// ---------- Altura para incrustarlo en otra web (iframe) ----------
+let ultimaAltura = 0;
+function avisaAltura() {
+  if (window.parent === window) return;
+  const h = Math.ceil(document.documentElement.scrollHeight);
+  if (h === ultimaAltura) return; ultimaAltura = h;
+  try { window.parent.postMessage({ cheasterAltura: h }, "*"); } catch (e) {}
+}
+window.addEventListener("resize", avisaAltura);
+if (window.ResizeObserver) new ResizeObserver(avisaAltura).observe(document.body);
+
+// ---------- Inicio ----------
+if (MODO_ITCH) {
+  ["m-dos", "m-online"].forEach(id => { document.getElementById(id).style.display = "none"; });
+  document.getElementById("m-enlace").style.display = "";
+  ajustes.vsIA = true;
+}
+const _enlace = (new URLSearchParams(location.search).get("sala") || "").trim().toUpperCase();
+const _guardada = leerSesion();
+if (!MODO_ITCH && _enlace) { reconstruir(cargar()); unirseAPartida(_enlace, true); }
+else if (!MODO_ITCH && _guardada && !_guardada.fin && Date.now() - _guardada.t < 6 * 3600 * 1000) { reconstruir(cargar()); unirseAPartida(_guardada.codigo); }
+else {
+  if (_guardada) olvidarSesion();
+  reconstruir(cargar());
+  if (MODO_ITCH && !ajustes.vsIA) { ajustes.vsIA = true; ajustes.girado = ajustes.color === BLACK; guardar(); nueva(); }
+  if (ajustes.vsIA && !resultado) turnoIA();
+}
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener("load", () => { try { navigator.serviceWorker.register("sw.js").catch(() => {}); } catch (e) {} });
+}
+// para pruebas automáticas
+window.__cheaster = { get S() { return S; }, get movimientos() { return movimientos; }, get sesion() { return sesion; }, E, ajustes, alClick, deshacer, nueva };
+})();
+</script>
+</body>
+</html>

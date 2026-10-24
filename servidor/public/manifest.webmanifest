@@ -1,0 +1,16 @@
+{
+  "name": "Cheaster - Ajedrez sin caballos",
+  "short_name": "Cheaster",
+  "description": "Ajedrez de 6x6 sin caballos. Juega contra un amigo o contra la IA.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#2f2f2f",
+  "theme_color": "#2f2f2f",
+  "lang": "es",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
