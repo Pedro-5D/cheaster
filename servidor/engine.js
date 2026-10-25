@@ -11,7 +11,7 @@ const VALOR = [0, 100, 300, 500, 900, 0];
 const MATE = 100000;
 
 const INICIAL = [
-  -R, -B, -Q, -K, -B, -R,
+  -R, -B, -K, -Q, -B, -R,
   -P, -P, -P, -P, -P, -P,
   0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0,
