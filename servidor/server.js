@@ -183,11 +183,10 @@ function limite(clave, max, ventanaMs) {
   return ++c.n <= max;
 }
 setInterval(() => { const ahora = Date.now(); for (const [k, c] of cubos) if (ahora - c.t > 3600 * 1000) cubos.delete(k); }, 600000).unref();
-const ipDe = socket => String((socket.handshake.headers["x-forwarded-for"] || socket.handshake.address || "?")).split(",")[0].trim();
+// Privacidad: el servidor no lee ni guarda direcciones IP (nginx tampoco se las pasa). Los límites son por conexión y globales.
 
 // ---------- Conexiones ----------
 io.on("connection", socket => {
-  const ip = ipDe(socket);
   let codigoActual = null;
   const sala = () => (codigoActual && salas.get(codigoActual)) || null;
   const ok = (cb, extra) => { if (typeof cb === "function") cb(Object.assign({ ok: true }, extra)); };
@@ -216,7 +215,7 @@ io.on("connection", socket => {
 
   socket.on("crear", (datos, cb) => {
     if (limitado()) return error(cb, "Demasiadas peticiones");
-    if (!limite("crear:" + ip, 30, 3600 * 1000)) return error(cb, "Has creado demasiadas partidas. Espera un rato.");
+    if (!limite("crear:" + socket.id, 30, 3600 * 1000) || !limite("crear:todos", 1500, 3600 * 1000)) return error(cb, "Has creado demasiadas partidas. Espera un rato.");
     if (salas.size >= MAX_SALAS) return error(cb, "El servidor está lleno ahora mismo. Inténtalo más tarde.");
     soltar();
     const pedido = datos && datos.color;
@@ -233,7 +232,7 @@ io.on("connection", socket => {
 
   socket.on("unirse", (datos, cb) => {
     if (limitado()) return error(cb, "Demasiadas peticiones");
-    if (!limite("unir:" + ip, 120, 3600 * 1000)) return error(cb, "Demasiados intentos. Espera un rato.");
+    if (!limite("unir:" + socket.id, 120, 3600 * 1000) || !limite("unir:todos", 6000, 3600 * 1000)) return error(cb, "Demasiados intentos. Espera un rato.");
     const codigo = datos && typeof datos.codigo === "string" ? datos.codigo.trim().toUpperCase().slice(0, 8) : "";
     const s = salas.get(codigo);
     if (!s) return error(cb, "No existe esa partida. Puede haber caducado; revisa el código.");
